@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify
 from models.user import User
 from database import db
 from flask_login import LoginManager, login_user, current_user, logout_user, login_required
+import bcrypt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "your_secret_key"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:admin123@127.0.0.1:3306/flask-crud'
+
 
 login_manager = LoginManager()
 db.init_app(app)
@@ -25,7 +27,7 @@ def login():
     if username and password:
         user = User.query.filter_by(username=username).first()
 
-        if user and user.password == password:
+        if user and bcrypt.checkpw(str.encode(password), str.encode(user.password)):
             login_user(user)
             print(current_user.is_authenticated)
             return jsonify({"message": "Autenticação realizada com sucesso"})
@@ -48,6 +50,8 @@ def update_user(id_user):
     user = User.query.get(id_user)
     password = data.get('password')
 
+    if id_user != current_user.id and current_user.role == 'user':
+        return jsonify({"message": "Operação não permitida"}), 403
     if user and password:
         user.password = password
         db.session.commit()
@@ -59,6 +63,8 @@ def update_user(id_user):
 def delete_user(id_user):
     user = User.query.get(id_user)
 
+    if current_user.role != 'admin':
+        return jsonify({"message": "operação não permitida"}), 403
     if id_user == current_user.id:
         return jsonify({"message": "Deleção não permitida"}), 403
 
@@ -81,10 +87,11 @@ def create_user():
     password = data.get('password')  
 
     if username and password:
+        hashedPassword = bcrypt.hashpw(str.encode(password), bcrypt.gensalt())
         userAlreadyExists = User.query.filter_by(username=username).first()
         if userAlreadyExists:
             return jsonify({"message": "Usuário já existe"}), 400
-        user = User(username=username, password=password)
+        user = User(username=username, password=hashedPassword, role="user")
         db.session.add(user)
         db.session.commit()
         return jsonify({"message": "Usuário criado com sucesso"})
